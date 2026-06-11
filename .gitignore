@@ -1,0 +1,19 @@
+# environments / caches
+.venv/
+__pycache__/
+.vscode/
+.agents/
+.codex/
+
+# data (troppo grandi per git)
+datasets/
+input/
+*.zip
+
+# pesi modello e artefatti di training
+*.pt
+runs/
+output/
+exam/
+.cache-rally/
+sinner.mp4
