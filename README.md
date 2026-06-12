@@ -44,6 +44,12 @@ input/                   input videos (gitignored)
 output/                  annotated videos and previews (gitignored)
 runs/                    Ultralytics training/validation runs (gitignored)
 exam/                    report and presentation material
+    A - Relation/        LaTeX report
+        Makefile         `make` builds diagram + report, `make clean` removes intermediates
+        src/             LaTeX sources: report .tex, references.bib
+            figures/     report figures (TikZ pipeline diagram + training-curve PNGs)
+        pdf/             compiled report PDF
+    B - Presentation/    presentation slides
 ```
 
 ## Install

@@ -1,0 +1,73 @@
+\documentclass[tikz,border=8pt]{standalone}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds}
+
+\begin{document}
+\begin{tikzpicture}[
+	font=\sffamily\small,
+	node distance=7mm and 9mm,
+	box/.style={draw, rounded corners=2pt, align=center, minimum height=9mm,
+		inner xsep=2.5mm, inner ysep=1.5mm, fill=white},
+	model/.style={box, fill=blue!12},
+	custom/.style={box, fill=orange!20},
+	io/.style={box, fill=green!12},
+	geom/.style={box, fill=violet!12},
+	arr/.style={-{Stealth[length=2.5mm]}, thick},
+	lbl/.style={font=\sffamily\footnotesize\itshape, gray}
+]
+
+% input
+\node[io] (video) {Broadcast video\\ \footnotesize single camera, 25 fps};
+
+% three detection branches
+\node[model, above right=2mm and 12mm of video] (court)
+	{Court keypoints\\ \footnotesize YOLO26-pose (trained)\\ \footnotesize 14 keypoints};
+\node[model, right=12mm of video] (player)
+	{Player tracking\\ \footnotesize YOLO26 pretrained\\ \footnotesize + BoT-SORT};
+\node[model, below right=2mm and 12mm of video] (ball)
+	{Ball detection\\ \footnotesize YOLO26 fine-tuned\\ \footnotesize (n / s)};
+
+% per-branch processing
+\node[geom, right=of court] (homog)
+	{Homography $H$\\ \footnotesize RANSAC, pixel $\leftrightarrow$ meters};
+\node[custom, right=of ball] (smooth)
+	{Parabolic smoother\\ \footnotesize outlier gating, segment fit,\\ \footnotesize gap bridging};
+
+% metric space
+\node[geom, right=14mm of player] (proj)
+	{Projection to\\ metric court space\\ \footnotesize ITF $10.97 \times 23.77$ m};
+
+% analytics chain
+\node[custom, right=of proj] (hits)
+	{Shot + bounce detection\\ \footnotesize $\dot{y}$ reversal in court (shots)\\ \footnotesize and image space (bounces)};
+\node[custom, right=of hits] (stats)
+	{Statistics\\ \footnotesize shot speed (km/h),\\ \footnotesize shot count, player speed};
+
+% output
+\node[io, right=of stats] (out)
+	{Annotated video\\ \footnotesize boxes + confidence, ball trail,\\ \footnotesize minimap, stats panel};
+
+% arrows
+\draw[arr] (video) -- (court);
+\draw[arr] (video) -- (player);
+\draw[arr] (video) -- (ball);
+\draw[arr] (court) -- (homog);
+\draw[arr] (ball) -- (smooth);
+\draw[arr] (homog) -- (proj);
+\draw[arr] (player) -- node[lbl, above, pos=0.45] {foot points} (proj);
+\draw[arr] (smooth) -- (proj);
+\draw[arr] (proj) -- (hits);
+\draw[arr] (hits) -- (stats);
+\draw[arr] (stats) -- (out);
+
+% legend
+\node[below=9mm of ball, anchor=north west, xshift=-14mm] (leg) {
+	\begin{tikzpicture}[font=\sffamily\footnotesize, node distance=2mm]
+		\node[model, minimum height=5mm, inner ysep=0.8mm] (l1) {YOLO26 model};
+		\node[custom, minimum height=5mm, inner ysep=0.8mm, right=4mm of l1] (l2) {original contribution};
+		\node[geom, minimum height=5mm, inner ysep=0.8mm, right=4mm of l2] (l3) {geometry};
+		\node[io, minimum height=5mm, inner ysep=0.8mm, right=4mm of l3] (l4) {input / output};
+	\end{tikzpicture}
+};
+
+\end{tikzpicture}
+\end{document}
