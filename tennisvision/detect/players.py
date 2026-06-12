@@ -18,23 +18,47 @@ PERSON_CLASS = 0
 
 
 def foot_point(bbox: np.ndarray) -> np.ndarray:
-    """Bottom-center of a bbox (x1,y1,x2,y2): where the player touches court."""
-    x1, y1, x2, y2 = bbox
+    """Returns where a player touches the court.
+
+    Args:
+        bbox: (x1, y1, x2, y2, ...) box; extra trailing values (e.g.
+            confidence) are ignored.
+
+    Returns:
+        (x, y) bottom-center of the box, in pixels.
+    """
+    x1, y1, x2, y2 = bbox[:4]
     return np.array([(x1 + x2) / 2.0, y2])
 
 
 class PlayerTracker:
-    def __init__(self, model_name: str = "yolo26x.pt", conf: float = 0.3):
+    """Person detection and tracking with pretrained YOLO26."""
+
+    def __init__(self, model_name: str = "models/yolo26x.pt",
+                 conf: float = 0.3):
+        """Loads the model.
+
+        Args:
+            model_name: Path to pretrained YOLO26 detection weights.
+            conf: Detection confidence threshold.
+        """
         self.model = YOLO(model_name)
         self.conf = conf
 
     def track_frames(self, frames) -> list:
-        """Returns, per frame, a dict {track_id: bbox (4,) float}.
+        """Runs detection + tracking on every frame.
 
-        Accepts any iterable of frames (list or generator).
+        Args:
+            frames: Any iterable of BGR frames (list or generator).
+
+        Returns:
+            Per frame, a dict {track_id: (5,) float array
+            (x1, y1, x2, y2, conf)}.
         """
         detections = []
-        for frame in frames:
+        for i, frame in enumerate(frames):
+            if i % 200 == 0:
+                print(f"\r  player tracking: frame {i}", end="", flush=True)
             result = self.model.track(
                 frame, persist=True, classes=[PERSON_CLASS],
                 conf=self.conf, verbose=False)[0]
@@ -42,14 +66,29 @@ class PlayerTracker:
             if result.boxes is not None and result.boxes.id is not None:
                 ids = result.boxes.id.int().tolist()
                 boxes = result.boxes.xyxy.cpu().numpy()
-                for tid, box in zip(ids, boxes):
-                    frame_dets[tid] = box
+                confs = result.boxes.conf.cpu().numpy()
+                for tid, box, c in zip(ids, boxes, confs):
+                    frame_dets[tid] = np.append(box, c)
             detections.append(frame_dets)
+        print()
         return detections
 
     @staticmethod
     def select_players(detections: list, court: CourtReference) -> list:
-        """Keep the two track IDs most consistently inside the court."""
+        """Keeps the two track IDs most consistently inside the court.
+
+        Args:
+            detections: Per-frame dicts as returned by track_frames().
+            court: Court reference used to project foot points to meters.
+
+        Returns:
+            Per frame, a dict {1: bbox, 2: bbox} with player 1 in the
+            bottom half (near the camera).
+
+        Raises:
+            ValueError: If two players cannot be identified, or they are
+                never visible in the same frame.
+        """
         on_court = defaultdict(int)
         seen = defaultdict(int)
         for frame_dets in detections:

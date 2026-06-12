@@ -15,6 +15,7 @@ from ultralytics import YOLO
 
 
 def main():
+    """Trains the ball detector and saves final metrics as JSON."""
     p = argparse.ArgumentParser()
     p.add_argument("--data", default="datasets/ball/data.yaml", help="path to data.yaml")
     p.add_argument("--model", default="yolo26n.pt")

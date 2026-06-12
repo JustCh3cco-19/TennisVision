@@ -13,12 +13,31 @@ N_KEYPOINTS = 14
 
 
 class CourtKeypointDetector:
+    """Court keypoint detector wrapping a trained YOLO26-pose model."""
+
     def __init__(self, model_path: str, kpt_conf: float = 0.5):
+        """Loads the model.
+
+        Args:
+            model_path: Path to the trained court-pose weights (.pt).
+            kpt_conf: Per-keypoint confidence threshold; keypoints below
+                it are returned as NaN.
+        """
         self.model = YOLO(model_path)
         self.kpt_conf = kpt_conf
 
     def detect(self, frame: np.ndarray) -> np.ndarray:
-        """Returns (14, 2) keypoints in pixels, NaN where not confident."""
+        """Detects the court keypoints on a single frame.
+
+        Args:
+            frame: BGR frame.
+
+        Returns:
+            (14, 2) keypoints in pixels, NaN where not confident.
+
+        Raises:
+            ValueError: If no court is detected in the frame.
+        """
         result = self.model.predict(frame, verbose=False)[0]
         if result.keypoints is None or len(result.keypoints) == 0:
             raise ValueError("no court detected in frame")
@@ -31,10 +50,14 @@ class CourtKeypointDetector:
         return kpts
 
     def detect_frames(self, frames) -> np.ndarray:
-        """Per-frame keypoints: (N, 14, 2), all-NaN rows for frames where no
-        court is detected (close-ups, replays, crowd shots).
+        """Detects court keypoints on every frame.
 
-        Accepts any iterable of frames (list or generator).
+        Args:
+            frames: Any iterable of BGR frames (list or generator).
+
+        Returns:
+            (N, 14, 2) per-frame keypoints; all-NaN rows for frames where
+            no court is detected (close-ups, replays, crowd shots).
         """
         out = []
         for frame in frames:
@@ -46,13 +69,22 @@ class CourtKeypointDetector:
 
     def detect_median(self, video, n_samples: int = 5,
                       max_attempts: int = 30) -> np.ndarray:
-        """Median of keypoints over sampled frames where the court is visible:
-        cheap temporal aggregation that suppresses per-frame jitter.
+        """Aggregates keypoints over sparsely sampled frames.
 
-        `video` is a VideoReader (sparse seeks, no full decode in memory).
         Broadcast footage cuts away from the court view (close-ups, crowd,
-        replays), so frames where no court is detected are skipped; sampling
-        stops after `n_samples` successful detections.
+        replays), so frames where no court is detected are skipped; the
+        median over the successful detections suppresses per-frame jitter.
+
+        Args:
+            video: A VideoReader (sparse seeks, no full decode in memory).
+            n_samples: Successful detections to aggregate before stopping.
+            max_attempts: Frames sampled uniformly across the video.
+
+        Returns:
+            (14, 2) median keypoints in pixels.
+
+        Raises:
+            ValueError: If no court is detected in any sampled frame.
         """
         idx = np.linspace(0, video.n_frames - 1, max_attempts, dtype=int)
         detections = []

@@ -16,6 +16,15 @@ class VideoReader:
     """Streaming, re-iterable access to a video file."""
 
     def __init__(self, path: str):
+        """Opens the file once to read its metadata.
+
+        Args:
+            path: Path to the video file.
+
+        Raises:
+            FileNotFoundError: If the file cannot be opened.
+            ValueError: If the file contains no frames.
+        """
         self.path = path
         cap = self._open()
         self.fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
@@ -33,7 +42,11 @@ class VideoReader:
         return cap
 
     def frames(self):
-        """Generator over all frames (BGR). Each call re-reads the file."""
+        """Iterates over all frames; each call re-reads the file.
+
+        Yields:
+            BGR frames in playback order.
+        """
         cap = self._open()
         try:
             while True:
@@ -45,7 +58,17 @@ class VideoReader:
             cap.release()
 
     def frame_at(self, index: int) -> np.ndarray:
-        """Random access to a single frame (seek, used for sparse sampling)."""
+        """Random access to a single frame (seek, used for sparse sampling).
+
+        Args:
+            index: Frame index.
+
+        Returns:
+            The BGR frame at that index.
+
+        Raises:
+            ValueError: If the frame cannot be read.
+        """
         cap = self._open()
         try:
             cap.set(cv2.CAP_PROP_POS_FRAMES, index)
@@ -61,6 +84,14 @@ class VideoWriter:
     """Incremental writer: frames go to disk as they are rendered."""
 
     def __init__(self, path: str, fps: float, width: int, height: int):
+        """Opens the output file for writing.
+
+        Args:
+            path: Output video path (.mp4).
+            fps: Output frame rate.
+            width: Frame width in pixels.
+            height: Frame height in pixels.
+        """
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         self._writer = cv2.VideoWriter(path, fourcc, fps, (width, height))
 
@@ -89,11 +120,26 @@ class VideoClip:
 
 
 def load_video(path: str) -> VideoClip:
+    """Loads a whole video into memory.
+
+    Args:
+        path: Path to the video file.
+
+    Returns:
+        A VideoClip with all decoded frames.
+    """
     reader = VideoReader(path)
     return VideoClip(frames=list(reader.frames()), fps=reader.fps)
 
 
 def save_video(frames: list, fps: float, path: str) -> None:
+    """Writes a list of frames to disk as an mp4.
+
+    Args:
+        frames: Non-empty list of BGR frames of equal size.
+        fps: Output frame rate.
+        path: Output video path.
+    """
     h, w = frames[0].shape[:2]
     with VideoWriter(path, fps, w, h) as writer:
         for frame in frames:

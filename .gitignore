@@ -15,5 +15,5 @@ input/
 runs/
 output/
 exam/
-.cache-rally/
+.cache*/
 sinner.mp4

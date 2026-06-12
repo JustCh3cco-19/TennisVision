@@ -70,12 +70,24 @@ class CourtReference:
     @classmethod
     def from_keypoints(cls, keypoints_px: np.ndarray,
                        min_points: int = 4) -> "CourtReference":
-        """Fit a homography with RANSAC from detected keypoints.
+        """Fits a homography with RANSAC from detected keypoints.
 
         Accepts either the full 14-keypoint set or any prefix of
         COURT_MODEL_POINTS (e.g. just the 4 doubles corners). Points with
         non-finite coordinates (missed detections) are dropped; RANSAC
         tolerates residual localization noise on the rest.
+
+        Args:
+            keypoints_px: (N, 2) detected keypoints in image pixels, in
+                COURT_MODEL_POINTS order. NaN rows mark missed detections.
+            min_points: Minimum number of finite keypoints required.
+
+        Returns:
+            A CourtReference with the fitted homography and its inverse.
+
+        Raises:
+            ValueError: If fewer than ``min_points`` keypoints are finite,
+                or the homography estimation fails.
         """
         keypoints_px = np.asarray(keypoints_px, dtype=np.float64).reshape(-1, 2)
         model_points = COURT_MODEL_POINTS[:len(keypoints_px)]
@@ -93,11 +105,25 @@ class CourtReference:
                    keypoints_px=keypoints_px)
 
     def to_court(self, points_px: np.ndarray) -> np.ndarray:
-        """Project image points (N,2) to court coordinates in meters."""
+        """Projects image points to court coordinates.
+
+        Args:
+            points_px: (N, 2) points in image pixels.
+
+        Returns:
+            (N, 2) points in court meters.
+        """
         return self._apply(self.homography, points_px)
 
     def to_image(self, points_m: np.ndarray) -> np.ndarray:
-        """Project court points in meters (N,2) back to image pixels."""
+        """Projects court points back to image pixels.
+
+        Args:
+            points_m: (N, 2) points in court meters.
+
+        Returns:
+            (N, 2) points in image pixels.
+        """
         return self._apply(self.inverse, points_m)
 
     @staticmethod
@@ -107,7 +133,15 @@ class CourtReference:
         return out.reshape(-1, 2)
 
     def contains(self, point_m: np.ndarray, margin: float = 2.0) -> bool:
-        """True if a court-space point lies on the court (with margin, in m)."""
+        """Checks whether a court-space point lies on the court.
+
+        Args:
+            point_m: (x, y) position in court meters.
+            margin: Tolerance around the court boundary, in meters.
+
+        Returns:
+            True if the point is on the court (within the margin).
+        """
         x, y = point_m
         return (-margin <= x <= COURT_WIDTH_DOUBLES + margin
                 and -margin <= y <= COURT_LENGTH + margin)

@@ -1,5 +1,6 @@
 ultralytics>=8.3.200
 opencv-python
 numpy
+pillow
 torch
 torchvision

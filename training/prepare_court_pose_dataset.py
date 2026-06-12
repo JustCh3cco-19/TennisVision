@@ -38,6 +38,17 @@ names:
 
 
 def convert(kps, w, h):
+    """Converts one annotation to an Ultralytics pose label line.
+
+    Args:
+        kps: List of 14 (x, y) keypoints in pixels, source ordering.
+        w: Image width in pixels.
+        h: Image height in pixels.
+
+    Returns:
+        The label line "class cx cy w h (x y vis)*14" with normalized
+        coordinates, or None if fewer than 4 keypoints are visible.
+    """
     pts = np.full((14, 3), 0.0)
     for src_i, (x, y) in enumerate(kps):
         dst_i = SOURCE_TO_CANONICAL[src_i]
@@ -54,6 +65,7 @@ def convert(kps, w, h):
 
 
 def main():
+    """Converts the JSON keypoint dataset to Ultralytics pose format."""
     p = argparse.ArgumentParser()
     p.add_argument("--data-json", required=True)
     p.add_argument("--images-dir", required=True)

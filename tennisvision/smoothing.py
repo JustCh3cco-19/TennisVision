@@ -22,11 +22,34 @@ import numpy as np
 
 
 class BallParabolicSmoother:
+    """Smooths a raw ball track with per-segment parabolic fits.
+
+    Attributes:
+        gate_px: Maximum plausible displacement per frame, in pixels;
+            detections implying a larger jump are rejected as outliers.
+        max_gap: Longest run of missed detections tolerated inside a
+            single segment before it is split.
+        turn_cos: Cosine of the direction-change angle that splits a
+            segment (hits and bounces).
+        min_seg_points: Minimum valid detections for a segment to be fit.
+        trim_px: Residual threshold (pixels) for the outlier-trimming
+            refit pass.
+    """
+
     def __init__(self, gate_px: float = 120.0,
                  max_gap: int = 20,
                  turn_angle_deg: float = 60.0,
                  min_seg_points: int = 4,
                  trim_px: float = 15.0):
+        """Initializes the smoother.
+
+        Args:
+            gate_px: Maximum plausible per-frame displacement in pixels.
+            max_gap: Longest miss-run allowed inside a segment, in frames.
+            turn_angle_deg: Direction change (degrees) that splits a segment.
+            min_seg_points: Minimum valid points required to fit a segment.
+            trim_px: Residual threshold for the refit pass, in pixels.
+        """
         self.gate_px = gate_px
         self.max_gap = max_gap            # longest miss-run inside a segment
         self.turn_cos = np.cos(np.deg2rad(turn_angle_deg))
@@ -34,9 +57,14 @@ class BallParabolicSmoother:
         self.trim_px = trim_px            # residual threshold for the refit
 
     def smooth(self, measurements: np.ndarray) -> np.ndarray:
-        """measurements: (N,2) pixel centers with NaN for misses.
-        Returns (N,2) fitted positions (NaN where no segment covers the
-        frame)."""
+        """Fits and evaluates the piecewise parabolic model.
+
+        Args:
+            measurements: (N, 2) raw pixel centers, NaN for missed frames.
+
+        Returns:
+            (N, 2) fitted positions; NaN where no segment covers the frame.
+        """
         pts = measurements.astype(float).copy()
         self._reject_outliers(pts)
 
@@ -66,8 +94,15 @@ class BallParabolicSmoother:
             last = i
 
     def _segments(self, pts: np.ndarray):
-        """Yield arrays of frame indices of valid points, split at long
-        gaps and at sharp direction changes."""
+        """Splits the track into parabolic segments.
+
+        Args:
+            pts: (N, 2) gated positions, NaN for missing frames.
+
+        Yields:
+            Arrays of frame indices of valid points, split at long gaps
+            and at sharp direction changes.
+        """
         valid = np.flatnonzero(np.isfinite(pts).all(axis=1))
         if len(valid) == 0:
             return
@@ -95,8 +130,15 @@ class BallParabolicSmoother:
             yield np.array(seg)
 
     def _robust_quadfit(self, t: np.ndarray, v: np.ndarray) -> np.ndarray:
-        """Return quadratic coefficients (np.polyfit order) fitted to
-        (t, v), refit once after trimming large-residual points."""
+        """Fits a quadratic with one outlier-trimming refit pass.
+
+        Args:
+            t: Sample times (frame indices) of the segment.
+            v: Sample values (one pixel coordinate) at those times.
+
+        Returns:
+            Polynomial coefficients in np.polyfit order.
+        """
         deg = 2 if len(t) > 2 else 1
         coeffs = np.polyfit(t, v, deg)
         resid = np.abs(np.polyval(coeffs, t) - v)

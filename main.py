@@ -15,18 +15,23 @@ import cv2
 import numpy as np
 
 from tennisvision import (BallParabolicSmoother, CourtReference, compute_stats,
-                         detect_hits, VideoReader, VideoWriter)
+                         detect_bounces, detect_hits, VideoReader, VideoWriter)
 from tennisvision.detect import (BallDetector, CourtKeypointDetector,
                                 PlayerTracker, foot_point)
 from tennisvision import viz
 
 
 def parse_args():
+    """Parses the command-line arguments.
+
+    Returns:
+        The populated argparse.Namespace.
+    """
     p = argparse.ArgumentParser(description="Tennis video analysis")
     p.add_argument("--video", required=True)
     p.add_argument("--ball-model", required=True)
     p.add_argument("--court-model", required=True)
-    p.add_argument("--player-model", default="yolo26x.pt")
+    p.add_argument("--player-model", default="models/yolo26x.pt")
     p.add_argument("--output", default="output/annotated.mp4")
     p.add_argument("--cache", default=None,
                    help="directory for cached detections (skips inference)")
@@ -36,8 +41,18 @@ def parse_args():
 
 
 def cached(cache_dir, name, fn):
-    """Run fn() or load its pickled result, to iterate quickly on the
-    analysis stages without re-running inference."""
+    """Runs fn() or loads its pickled result.
+
+    Lets the analysis stages iterate quickly without re-running inference.
+
+    Args:
+        cache_dir: Cache directory, or None to disable caching.
+        name: Cache key; the result is stored as ``<name>.pkl``.
+        fn: Zero-argument callable producing the value to cache.
+
+    Returns:
+        The cached or freshly computed value.
+    """
     if cache_dir is None:
         return fn()
     path = Path(cache_dir) / f"{name}.pkl"
@@ -50,13 +65,22 @@ def cached(cache_dir, name, fn):
 
 
 def visible_segments(mask) -> list:
-    """Contiguous runs of True in a boolean mask, as (start, end) pairs
-    (end exclusive). Camera cuts are the natural segment boundaries."""
+    """Finds contiguous runs of True in a boolean mask.
+
+    Camera cuts are the natural segment boundaries.
+
+    Args:
+        mask: 1-D boolean array.
+
+    Returns:
+        (start, end) pairs, end exclusive.
+    """
     edges = np.flatnonzero(np.diff(np.r_[False, mask, False]))
     return list(zip(edges[::2], edges[1::2]))
 
 
 def main():
+    """Runs the full analysis pipeline and writes the annotated video."""
     args = parse_args()
     # frames are streamed from disk on each pass: a full 1080p match does
     # not fit in RAM decoded.
@@ -88,7 +112,8 @@ def main():
     # when the court view comes back), so P1/P2 are selected independently
     # within each contiguous court-visible segment.
     tracker = PlayerTracker(args.player_model)
-    raw_tracks = cached(args.cache, "players",
+    # cache key v2: boxes now carry a 5th confidence column
+    raw_tracks = cached(args.cache, "players_v2",
                         lambda: tracker.track_frames(video.frames()))
     raw_tracks = [fr if vis else {}
                   for fr, vis in zip(raw_tracks, court_visible)]
@@ -106,11 +131,13 @@ def main():
 
     # 3. ball: detect -> piecewise parabolic fit -> project to meters
     ball_detector = BallDetector(args.ball_model)
-    raw_ball = cached(args.cache, "ball",
+    # cache key v2: detections now carry an (x, y, conf) third column
+    raw_ball = cached(args.cache, "ball_v2",
                       lambda: ball_detector.detect_frames(video.frames()))
     raw_ball = raw_ball.copy()
     raw_ball[~court_visible] = np.nan  # ball "detections" on cutaway frames
-    ball_px = BallParabolicSmoother().smooth(raw_ball)
+    ball_conf = raw_ball[:, 2]
+    ball_px = BallParabolicSmoother().smooth(raw_ball[:, :2])
     ball_px[~court_visible] = np.nan  # don't let the fit bridge camera cuts
     ball_court = np.full_like(ball_px, np.nan)
     valid = np.isfinite(ball_px).all(axis=1)
@@ -118,26 +145,36 @@ def main():
         ball_court[valid] = court.to_court(ball_px[valid])
 
     # 4. events + stats
-    hits = detect_hits(ball_court, video.fps)
+    hits = detect_hits(ball_court, video.fps, ball_px, player_boxes)
+    bounces = detect_bounces(ball_px, ball_court, hits, players_court,
+                             video.fps)
+    print(f"detected {len(bounces)} bounces")
     stats = compute_stats(hits, ball_court, players_court, video.fps)
     print(f"detected {len(hits)} shots")
     for s in stats.shots:
-        print(f"  frame {s.frame:5d}  P{s.player}  "
+        print(f"  frame {s.frame:5d}  P{s.player}  {s.shot_type:<12s}"
               f"ball {s.ball_speed_kmh:5.1f} km/h  "
               f"opponent {s.opponent_speed_kmh:4.1f} km/h")
 
     # 5. render: streamed, each annotated frame is written to disk immediately
     minimap = viz.Minimap()
+    # vertically center the minimap + stats card block on the right edge
+    block_h = minimap.h + 12 + viz.stats_panel_height()
+    block_y = max(20, (video.height - block_h) // 2)
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     with VideoWriter(args.output, video.fps, video.width, video.height) as writer:
         for i, frame in enumerate(video.frames()):
             viz.draw_players(frame, player_boxes[i])
-            viz.draw_ball(frame, ball_px[i])
+            viz.draw_ball_trail(frame, ball_px, i)
+            viz.draw_ball(frame, ball_px[i], ball_conf[i])
             viz.draw_court_keypoints(frame, kps_frames[i])
-            mm = minimap.render(players_court[i], ball_court[i])
-            frame = minimap.paste(frame, mm)
-            viz.draw_stats_panel(frame, stats, i)
-            viz.draw_shot_speed(frame, stats, i, player_boxes[i])
+            recent = [ball_court[b] for b in bounces
+                      if b <= i <= b + int(1.5 * video.fps)]
+            mm = minimap.render(players_court[i], ball_court[i], recent)
+            frame = minimap.paste(frame, mm, y0=block_y)
+            viz.draw_stats_panel(frame, stats, i,
+                                 anchor=(video.width - 20,
+                                         block_y + minimap.h + 12))
             writer.write(frame)
             if args.show:
                 cv2.imshow("TennisVision", frame)

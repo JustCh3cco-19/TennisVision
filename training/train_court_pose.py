@@ -14,6 +14,7 @@ from ultralytics import YOLO
 
 
 def main():
+    """Trains the court keypoint model and saves final metrics as JSON."""
     p = argparse.ArgumentParser()
     p.add_argument("--data", required=True)
     p.add_argument("--model", default="yolo26n-pose.pt")
