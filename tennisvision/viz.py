@@ -111,6 +111,159 @@ def draw_court_keypoints(frame, keypoints_px):
     return frame
 
 
+RANSAC_INLIER_COLOR = (0, 255, 0)   # BGR, green
+RANSAC_OUTLIER_COLOR = (0, 0, 255)  # BGR, red
+
+
+def draw_ransac_keypoints(frame, court, legend: bool = True):
+    """Draws the homography keypoints colored by RANSAC inlier status.
+
+    Visualizes which detected court keypoints RANSAC kept (green inliers,
+    drawn as filled circles) versus rejected (red outliers, drawn as
+    hollow circles with a cross) when fitting the homography. This makes
+    the robustness of the RANSAC fit directly visible: outliers are the
+    mis-detected keypoints the homography correctly ignored.
+
+    Args:
+        frame: BGR frame, modified in place.
+        court: A ``CourtReference`` carrying ``keypoints_px`` (N, 2) and the
+            ``inliers`` (N,) boolean mask. None skips drawing.
+        legend: If True, draws a small color legend in the top-left corner.
+
+    Returns:
+        The annotated frame.
+    """
+    if court is None:
+        return frame
+    for i, (p, is_in) in enumerate(zip(court.keypoints_px, court.inliers)):
+        if not np.isfinite(p).all():
+            continue
+        x, y = int(p[0]), int(p[1])
+        if is_in:
+            cv2.circle(frame, (x, y), 5, RANSAC_INLIER_COLOR, -1, cv2.LINE_AA)
+        else:
+            cv2.circle(frame, (x, y), 6, RANSAC_OUTLIER_COLOR, 2, cv2.LINE_AA)
+            cv2.drawMarker(frame, (x, y), RANSAC_OUTLIER_COLOR,
+                           cv2.MARKER_TILTED_CROSS, 12, 2, cv2.LINE_AA)
+        cv2.putText(frame, str(i), (x + 6, y - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                    RANSAC_INLIER_COLOR if is_in else RANSAC_OUTLIER_COLOR, 1)
+    if legend:
+        n_in = int(np.count_nonzero(court.inliers))
+        n_out = int(np.count_nonzero(
+            np.isfinite(court.keypoints_px).all(axis=1) & ~court.inliers))
+        _draw_ransac_legend(frame, n_in, n_out)
+    return frame
+
+
+def _draw_ransac_legend(frame, n_in, n_out, anchor=(20, 20)):
+    """Draws the RANSAC inlier/outlier legend as a translucent card.
+
+    Mirrors the look of the match-stats panel (rounded translucent card,
+    TrueType font) so the counts stay readable over any background,
+    instead of the bare colored text that washes out on light frames.
+
+    Args:
+        frame: BGR frame, modified in place.
+        n_in: Number of inlier keypoints.
+        n_out: Number of detected-but-rejected (outlier) keypoints.
+        anchor: (x_left, y_top) of the card, in pixels.
+    """
+    pad, row_h, head_h = 12, 24, 24
+    w, h = 210, pad * 2 + head_h + row_h * 2
+    card = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(card)
+    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=10, fill=_BG,
+                        outline=(255, 255, 255, 40), width=1)
+    gb, gg, gr = RANSAC_INLIER_COLOR        # stored BGR -> RGBA for PIL
+    ob, og, orr = RANSAC_OUTLIER_COLOR
+    green, red = (gr, gg, gb, 255), (orr, og, ob, 255)
+    y = pad
+    d.text((pad, y), "RANSAC", font=_FONT_TITLE, fill=_BRIGHT)
+    y += head_h
+    # inlier row: filled dot, matching the on-court inlier marker
+    d.ellipse([pad, y + 4, pad + 11, y + 15], fill=green)
+    d.text((pad + 22, y), f"Inlier ({n_in})", font=_FONT_VALUE, fill=_BRIGHT)
+    y += row_h
+    # outlier row: hollow circle + cross, matching the on-court outlier marker
+    cx, cy = pad + 6, y + 9
+    d.ellipse([cx - 6, cy - 6, cx + 6, cy + 6], outline=red, width=2)
+    d.line([cx - 4, cy - 4, cx + 4, cy + 4], fill=red, width=2)
+    d.line([cx - 4, cy + 4, cx + 4, cy - 4], fill=red, width=2)
+    d.text((pad + 22, y), f"Outlier ({n_out})", font=_FONT_VALUE, fill=_BRIGHT)
+    _composite_card(frame, card, *anchor)
+    return frame
+
+
+def _composite_card(frame, card, x0, y0):
+    """Alpha-composites an RGBA PIL card onto a BGR frame at (x0, y0).
+
+    Args:
+        frame: BGR frame, modified in place.
+        card: RGBA PIL image to overlay.
+        x0, y0: Top-left placement of the card, in pixels.
+
+    Returns:
+        The frame with the card composited.
+    """
+    fh, fw = frame.shape[:2]
+    x0, y0 = max(0, x0), max(0, y0)
+    cw, ch = min(card.width, fw - x0), min(card.height, fh - y0)
+    roi = cv2.cvtColor(frame[y0:y0 + ch, x0:x0 + cw], cv2.COLOR_BGR2RGB)
+    out = Image.alpha_composite(Image.fromarray(roi).convert("RGBA"),
+                                card.crop((0, 0, cw, ch)))
+    frame[y0:y0 + ch, x0:x0 + cw] = cv2.cvtColor(
+        np.asarray(out.convert("RGB")), cv2.COLOR_RGB2BGR)
+    return frame
+
+
+COURT_OVERLAY_COLOR = (0, 255, 0)  # BGR
+
+
+def draw_court_overlay(frame, court, color=COURT_OVERLAY_COLOR,
+                       thickness: int = 2, draw_vertices: bool = True):
+    """Overlays the court model on the frame via the fitted homography.
+
+    Projects the canonical metric court (``COURT_MODEL_POINTS`` /
+    ``COURT_LINES``) back into image pixels with ``court.to_image`` and
+    draws the line skeleton. When the homography is correct the projected
+    lines coincide with the real court lines in the broadcast frame, which
+    makes the RANSAC-fitted homography directly verifiable by eye.
+
+    Args:
+        frame: BGR frame, modified in place.
+        court: A ``CourtReference`` (its ``to_image`` maps court meters to
+            image pixels). None skips drawing (e.g. frames where the
+            homography could not be estimated).
+        color: BGR line color.
+        thickness: Line thickness in pixels.
+        draw_vertices: If True, also marks the projected model vertices.
+
+    Returns:
+        The annotated frame.
+    """
+    if court is None:
+        return frame
+    pts_px = court.to_image(COURT_MODEL_POINTS)            # (14, 2) in pixels
+    for a, b in COURT_LINES:
+        pa, pb = pts_px[a], pts_px[b]
+        if np.isfinite(pa).all() and np.isfinite(pb).all():
+            cv2.line(frame, tuple(np.int32(pa)), tuple(np.int32(pb)),
+                     color, thickness, cv2.LINE_AA)
+    if draw_vertices:
+        for p in pts_px:
+            if np.isfinite(p).all():
+                cv2.circle(frame, tuple(np.int32(p)), 3, color, -1,
+                           cv2.LINE_AA)
+    # net line: midpoints of the two doubles sidelines (y = NET_Y in meters)
+    net_px = court.to_image(np.array([[0.0, NET_Y],
+                                      [COURT_WIDTH_DOUBLES, NET_Y]]))
+    if np.isfinite(net_px).all():
+        cv2.line(frame, tuple(np.int32(net_px[0])), tuple(np.int32(net_px[1])),
+                 color, thickness, cv2.LINE_AA)
+    return frame
+
+
 class Minimap:
     """Top-down court rendered from the metric model.
 

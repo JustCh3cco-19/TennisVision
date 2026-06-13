@@ -16,6 +16,8 @@ geometry can be evaluated reliably from a single camera.
 
 import numpy as np
 
+from .geometry import COURT_LENGTH, NET_Y
+
 
 def detect_hits(ball_court: np.ndarray, fps: float,
                 ball_px: np.ndarray = None,
@@ -23,7 +25,11 @@ def detect_hits(ball_court: np.ndarray, fps: float,
                 min_gap_s: float = 0.6,
                 smooth_window: int = 7,
                 min_speed_m_s: float = 1.0,
-                box_pad_factor: float = 0.8) -> list:
+                box_pad_factor: float = 0.8,
+                max_track_gap: int = 12,
+                rally_pause_s: float = 3.0,
+                baseline_margin_m: float = 4.5,
+                return_players: bool = False) -> list:
     """Detects shots as reversals of the ball motion along the court.
 
     The projected position of a ball high above the court is displaced
@@ -50,57 +56,188 @@ def detect_hits(ball_court: np.ndarray, fps: float,
         box_pad_factor: The player box is expanded by this fraction of
             its height on every side (the racquet reach) before testing
             whether it contains the ball.
+        return_players: Return ``(frame, player)`` pairs instead of only
+            frame indices.
 
     Returns:
         Frame indices where a shot is struck, in increasing order.
     """
-    y = ball_court[:, 1].copy()
+    y = np.asarray(ball_court, dtype=np.float64)[:, 1]
     n = len(y)
-
-    # short moving-average on the valid samples to suppress jitter
-    valid = np.isfinite(y)
-    idx = np.arange(n)
-    if valid.sum() < smooth_window * 2:
+    valid_idx = np.flatnonzero(np.isfinite(y))
+    if len(valid_idx) < smooth_window * 2:
         return []
-    y_filled = np.interp(idx, idx[valid], y[valid])
-    kernel = np.ones(smooth_window) / smooth_window
-    y_s = np.convolve(y_filled, kernel, mode="same")
 
-    vy = np.gradient(y_s) * fps  # m/s along the court
+    groups = _track_groups(valid_idx, max_track_gap)
+    candidates = []
+    rally_pause = int(round(rally_pause_s * fps))
+    previous_group_end = None
 
-    hits = []
-    min_gap = int(min_gap_s * fps)
-    for i in range(1, n):
-        if np.sign(vy[i]) != np.sign(vy[i - 1]) and vy[i] != 0:
-            # require real motion on both sides of the reversal
-            before = np.abs(vy[max(0, i - smooth_window):i]).max()
-            after = np.abs(vy[i:min(n, i + smooth_window)]).max()
+    for group_index, group in enumerate(groups):
+        start, end = int(group[0]), int(group[-1])
+        next_start = (
+            int(groups[group_index + 1][0])
+            if group_index + 1 < len(groups) else None
+        )
+        full_idx = np.arange(start, end + 1)
+        y_filled = np.interp(full_idx, group, y[group])
+        pad = smooth_window // 2
+        kernel = np.ones(smooth_window) / smooth_window
+        y_s = np.convolve(
+            np.pad(y_filled, (pad, pad), mode="edge"),
+            kernel, mode="valid")
+        vy = np.gradient(y_s) * fps
+
+        # A new track after a broadcast pause can begin with a serve, which
+        # has no incoming branch and therefore no velocity reversal.
+        if (previous_group_end is None
+                or start - previous_group_end > rally_pause):
+            contact = _contact_candidate(
+                ball_court, ball_px, player_boxes, start,
+                max(smooth_window, max_track_gap),
+                box_pad_factor, baseline_margin_m)
+            if contact is not None:
+                frame, player, score = contact
+                candidates.append((frame, player, score, np.inf))
+
+        for q in range(1, len(full_idx)):
+            if np.sign(vy[q]) == np.sign(vy[q - 1]) or vy[q] == 0:
+                continue
+            before = np.abs(vy[max(0, q - smooth_window):q]).max()
+            after = np.abs(
+                vy[q:min(len(vy), q + smooth_window)]).max()
             if before < min_speed_m_s or after < min_speed_m_s:
                 continue
-            if hits and i - hits[-1] < min_gap:
+            contact = _contact_candidate(
+                ball_court, ball_px, player_boxes, int(full_idx[q]),
+                smooth_window, box_pad_factor, baseline_margin_m)
+            if contact is not None:
+                frame, player, score = contact
+                candidates.append(
+                    (frame, player, score, min(before, after)))
+
+        # A fitted incoming arc and outgoing arc often leave a short NaN gap
+        # exactly around racket contact. Treat only baseline/player-adjacent
+        # gaps as candidates; mid-court gaps are usually missed detections.
+        finite = np.isfinite(y[start:end + 1])
+        runs = _boolean_runs(finite)
+        for (_, left_end), (right_start, _) in zip(runs, runs[1:]):
+            left = start + left_end - 1
+            right = start + right_start
+            gap = right - left - 1
+            if gap <= 0 or gap > max_track_gap:
                 continue
-            if ball_px is not None and player_boxes is not None:
-                if not _near_player_box(ball_px, player_boxes, i,
-                                        smooth_window, box_pad_factor):
-                    continue
-            hits.append(i)
-    return hits
+            contact = _contact_candidate(
+                ball_court, ball_px, player_boxes, (left + right) // 2,
+                max(smooth_window, gap + 2),
+                box_pad_factor, baseline_margin_m)
+            if contact is not None:
+                frame, player, score = contact
+                candidates.append((frame, player, score, 0.0))
+
+        # If the supported track ends before a long pause or the end of the
+        # clip, the last visible contact has no outgoing branch. Keep it only
+        # when it is still close to a player or baseline.
+        if next_start is None or next_start - end > rally_pause:
+            contact = _contact_candidate(
+                ball_court, ball_px, player_boxes, end,
+                smooth_window, box_pad_factor, baseline_margin_m)
+            if contact is not None:
+                frame, player, score = contact
+                candidates.append((frame, player, score, 0.0))
+
+        previous_group_end = end
+
+    events = _consolidate_hit_candidates(
+        candidates, int(round(min_gap_s * fps)), rally_pause)
+    if return_players:
+        return [(int(frame), int(player))
+                for frame, player, _, _ in events]
+    return [int(frame) for frame, _, _, _ in events]
 
 
-def _near_player_box(ball_px, player_boxes, i, window, pad_factor) -> bool:
-    """True if, around frame i, the ball lies in an expanded player box."""
-    n = len(ball_px)
-    for j in range(max(0, i - window), min(n, i + window + 1)):
-        if not np.isfinite(ball_px[j]).all():
+def _track_groups(valid_idx: np.ndarray, max_gap: int) -> list:
+    """Splits valid samples where more than ``max_gap`` frames are missing."""
+    if len(valid_idx) == 0:
+        return []
+    split = np.flatnonzero(np.diff(valid_idx) > max_gap + 1) + 1
+    return [group for group in np.split(valid_idx, split) if len(group)]
+
+
+def _boolean_runs(mask: np.ndarray) -> list:
+    """Returns half-open runs where a boolean mask is true."""
+    edges = np.flatnonzero(np.diff(np.r_[False, mask, False]))
+    return list(zip(edges[::2], edges[1::2]))
+
+
+def _contact_candidate(ball_court, ball_px, player_boxes, i, window,
+                       pad_factor, baseline_margin):
+    """Finds the most plausible contact frame and player around a candidate."""
+    n = len(ball_court)
+    best = None
+    if ball_px is not None and player_boxes is not None:
+        for j in range(max(0, i - window), min(n, i + window + 1)):
+            if not np.isfinite(ball_px[j]).all():
+                continue
+            for player, bbox in player_boxes[j].items():
+                distance = _point_box_distance(ball_px[j], bbox)
+                if best is None or distance < best[0]:
+                    best = (distance, j, player)
+        if best is not None and best[0] <= pad_factor:
+            return best[1], best[2], best[0]
+
+    valid = [
+        j for j in range(max(0, i - window), min(n, i + window + 1))
+        if np.isfinite(ball_court[j]).all()
+    ]
+    if not valid:
+        return None
+    j = min(valid, key=lambda frame: abs(frame - i))
+    y = float(ball_court[j, 1])
+    baseline_distance = min(abs(y), abs(COURT_LENGTH - y))
+    if baseline_distance > baseline_margin:
+        return None
+    player = 1 if y >= NET_Y else 2
+    return j, player, pad_factor + baseline_distance / baseline_margin
+
+
+def _point_box_distance(point, bbox) -> float:
+    """Point-to-box distance normalized by player-box height."""
+    x1, y1, x2, y2 = np.asarray(bbox[:4], dtype=np.float64)
+    height = max(1.0, y2 - y1)
+    dx = max(x1 - point[0], 0.0, point[0] - x2)
+    dy = max(y1 - point[1], 0.0, point[1] - y2)
+    return float(np.hypot(dx, dy) / height)
+
+
+def _consolidate_hit_candidates(candidates, min_gap, rally_pause) -> list:
+    """Merges duplicate reversals and enforces player alternation."""
+    if not candidates:
+        return []
+    candidates = sorted(candidates, key=lambda candidate: candidate[0])
+
+    merged = []
+    cluster = [candidates[0]]
+    for candidate in candidates[1:]:
+        if candidate[0] - cluster[0][0] < min_gap:
+            cluster.append(candidate)
+        else:
+            merged.append(min(
+                cluster, key=lambda item: (item[2], -item[3])))
+            cluster = [candidate]
+    merged.append(min(cluster, key=lambda item: (item[2], -item[3])))
+
+    alternating = []
+    for candidate in merged:
+        if (alternating
+                and candidate[0] - alternating[-1][0] <= rally_pause
+                and candidate[1] == alternating[-1][1]):
+            if (candidate[2], -candidate[3]) < (
+                    alternating[-1][2], -alternating[-1][3]):
+                alternating[-1] = candidate
             continue
-        bx, by = ball_px[j]
-        for bbox in player_boxes[j].values():
-            x1, y1, x2, y2 = bbox[:4]
-            pad = pad_factor * (y2 - y1)
-            if (x1 - pad <= bx <= x2 + pad
-                    and y1 - pad <= by <= y2 + pad):
-                return True
-    return False
+        alternating.append(candidate)
+    return alternating
 
 
 def detect_bounces(ball_px: np.ndarray, ball_court: np.ndarray,

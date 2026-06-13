@@ -27,3 +27,5 @@ sinner.mp4
 *.synctex.gz
 *.fls
 *.fdb_latexmk
+
+cache/

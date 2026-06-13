@@ -4,13 +4,15 @@ Analyzes broadcast tennis videos: detects the two players and the ball,
 reconstructs the court geometry, and computes shot speed, shot count,
 shot type and player movement speed, rendered on an annotated video
 (detection confidences, fading ball trail, top-down minimap with bounce
-marks, per-player stats panel).
+marks, per-player stats panel, court model overlay reprojected through the
+fitted homography with RANSAC inliers/outliers highlighted).
 
 ## Pipeline
 
-video -> court keypoints (YOLO26-pose) -> homography -> player tracking
-(YOLO26) -> ball detection (YOLO26 fine-tuned) -> piecewise parabolic
-smoothing -> projection to metric court space -> shot + bounce detection ->
+video -> court keypoints (YOLO26-pose) -> per-frame homography -> player tracking
+(YOLO26) -> ball detection (YOLO26 fine-tuned) -> off-court + static-hotspot
+rejection -> piecewise parabolic smoothing -> projection to metric court space
+-> shot + bounce detection ->
 shot classification (serve/volley/groundstroke) -> statistics -> rendering.
 
 ## Repository structure
@@ -70,6 +72,51 @@ python main.py --video input/match.mp4 \
     --court-model models/court_pose_yolo26.pt \
     --output output/annotated.mp4 \
     --cache .cache
+```
+
+The terminal reports the six pipeline stages and shows frame progress,
+percentage, elapsed time and ETA for long-running operations. Cache hits and
+misses are printed explicitly, so it is clear whether a detector is running or
+loading saved results.
+
+The annotated output overlays the canonical court model reprojected through
+the fitted per-frame homography: when the homography is correct, the projected
+lines coincide with the real court lines. Detected court keypoints are colored
+by RANSAC status (green inliers kept for the fit, red outliers rejected),
+making the robustness of the homography estimation directly verifiable by eye.
+
+Court keypoints are stabilized with a centered temporal median before fitting
+one homography per visible frame. This follows broadcast-camera pans and zooms
+without reintroducing detector jitter. `--court-smooth-window` controls the
+window size (default `11` frames), while `--court-min-keypoints` rejects
+close-ups and replay frames with only a few accidental keypoint detections.
+
+Player detections are assigned independently to the near and far court halves,
+so tracker ID changes do not drop a player for the rest of a rally. Short
+bounded gaps are interpolated; configure the limit with `--player-max-gap`
+(default `15` frames). On difficult grass/clay footage,
+`--player-court-crops` reruns detection only on a court half where the
+full-frame pass found no baseline player. It improves recall but costs extra
+inference time. Ball inference defaults to `--ball-imgsz 1280`, which retains
+more detail for the few-pixel ball on grass and clay; before smoothing,
+off-court detections and static hotspots (a fixed false "ball" from on-screen
+graphics or the fence, common on hardcourt) are rejected automatically so they
+cannot break a real trajectory near impact. For the court itself,
+`--court-preprocess` CLAHE-normalizes each frame before keypoint detection, and
+`--court-refine` snaps the projected court lines onto the detected white lines
+(chamfer ICP) to correct residual overlay drift. These mitigations improve
+short detection failures, but long surface-specific gaps still require
+fine-tuning with representative grass/clay footage.
+
+`--ransac-thresh` sets the RANSAC reprojection threshold for the court
+homography, in court meters (default `0.4`). Lower it to reject more keypoints
+(stricter fit), raise it to tolerate noisier keypoint detections:
+
+```bash
+python main.py --video input/match.mp4 \
+    --ball-model models/ball_yolo26s.pt \
+    --court-model models/court_pose_yolo26.pt \
+    --ransac-thresh 0.5
 ```
 
 ## Local Dataset

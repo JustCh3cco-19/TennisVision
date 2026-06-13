@@ -174,7 +174,8 @@ def player_speeds(players_court: list, fps: float,
 
 
 def compute_stats(hits: list, ball_court: np.ndarray,
-                  players_court: list, fps: float) -> MatchStats:
+                  players_court: list, fps: float,
+                  hit_players: dict | None = None) -> MatchStats:
     """Builds match statistics from detected hits and metric positions.
 
     The striker of each hit is the player closest to the ball at the
@@ -186,6 +187,8 @@ def compute_stats(hits: list, ball_court: np.ndarray,
         ball_court: (N, 2) ball positions in court meters.
         players_court: Per-frame dict {1: (x, y), 2: (x, y)} in meters.
         fps: Video frame rate.
+        hit_players: Optional mapping ``frame -> player`` produced by
+            image-space contact detection.
 
     Returns:
         A MatchStats with one ShotStat per valid hit pair and the
@@ -203,12 +206,17 @@ def compute_stats(hits: list, ball_court: np.ndarray,
         # striker = player closest to the ball around the moment of the
         # hit (the exact hit frame may have no valid ball projection)
         ref = _nearest_valid(ball_court, a, search)
-        pos = players_court[a]
-        if ref is None or len(pos) < 2:
+        pos = _nearest_player_positions(players_court, a, search)
+        if ref is None:
             continue
-        striker = min(pos, key=lambda p: np.linalg.norm(
-            np.asarray(pos[p]) - ball_court[ref]))
+        if not np.isfinite(ball_court[ref, 1]):
+            continue
+        striker = (
+            hit_players[a] if hit_players is not None and a in hit_players
+            else (1 if ball_court[ref, 1] >= NET_Y else 2)
+        )
         opponent = 2 if striker == 1 else 1
+        striker_pos = pos.get(striker, ball_court[ref])
 
         # speeds need the next hit; the last shot of a rally has none
         ball_speed, opp_speed = 0.0, 0.0
@@ -228,7 +236,7 @@ def compute_stats(hits: list, ball_court: np.ndarray,
             frame=a, player=striker,
             ball_speed_kmh=ball_speed,
             opponent_speed_kmh=opp_speed,
-            shot_type=classify_shot(pos[striker], rally_start)))
+            shot_type=classify_shot(striker_pos, rally_start)))
 
     # a player cannot strike twice within a fraction of a second: the
     # later reversal of such a pair is a projection artifact, drop it
@@ -251,3 +259,14 @@ def _nearest_valid(arr: np.ndarray, i: int, window: int):
         if np.isfinite(arr[j]).all():
             return j
     return None
+
+
+def _nearest_player_positions(players_court: list, i: int,
+                              window: int) -> dict:
+    """Nearest non-empty player-position dictionary around a frame."""
+    n = len(players_court)
+    for j in sorted(range(max(0, i - window), min(n, i + window + 1)),
+                    key=lambda frame: abs(frame - i)):
+        if players_court[j]:
+            return players_court[j]
+    return {}
