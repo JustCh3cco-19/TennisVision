@@ -47,11 +47,11 @@ def clear_text(shape):
     set_text(shape, "")
 
 
-def set_bullets(shape, lines, size=18):
+def set_bullets(shape, lines, size=18.5):
     """Put all lines as one bulleted list inside a single text box."""
     tf = shape.text_frame
     tf.word_wrap = True
-    tf.vertical_anchor = MSO_ANCHOR.TOP
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     name, col = _base_font(shape)
 
     def style(run):
@@ -139,7 +139,7 @@ set_bullets(S[2][7], [
     "cameras — costly and inaccessible to amateurs.",
     "Our goal: extract these statistics from a single ordinary broadcast "
     "video, with no calibration and no manual annotation.",
-], size=15)
+])
 clear_text(S[2][9]); clear_text(S[2][10])
 replace_pic(prs.slides[2], S[2][6], f"{A}/raw_broadcast.png")
 
@@ -153,7 +153,7 @@ set_bullets(S[4][7], [
     "Perspective distortion: pixel displacements do not map to physical "
     "speeds.",
     "Broadcast distractors: ball kids, line judges, on-screen graphics.",
-], size=15)
+])
 clear_text(S[4][9]); clear_text(S[4][10])
 replace_pic(prs.slides[4], S[4][6], f"{A}/raw_broadcast.png")
 
@@ -179,7 +179,7 @@ set_bullets(S[7][7], [
     "TrackNet: heatmap network for tracking small, fast balls in sport video.",
     "Court registration: classical line/Hough heuristics vs learned keypoint "
     "regression.",
-], size=15)
+])
 clear_text(S[7][9]); clear_text(S[7][10])
 replace_pic(prs.slides[7], S[7][6], f"{SEL}/sinner_hardcourt_sec007.png")
 
@@ -201,13 +201,13 @@ clear_text(S[8][8]); clear_text(S[8][9]); clear_text(S[8][10])
 # ---- slide 11: Proposed 1 (big picture = pipeline diagram) ----
 set_text(S[10][4], "The TennisVision Pipeline")
 replace_pic(prs.slides[10], S[10][7], f"{FIG}/02-PipelineDiagram.png")
-resize(S[10][6], 1.8, 7.0, 13.0, 1.3)
+resize(S[10][6], 1.3, 6.8, 13.4, 2.0)
 set_bullets(S[10][6], [
-    "Three YOLO26 models (court pose, player tracking, ball) feed a "
-    "homography-based metric court space.",
-    "Parabolic smoother refines the ball track; shots/bounces detected in "
-    "metric / image space; rendered with a minimap and live stats.",
-], size=13)
+    "Stages: court keypoints → homography (pixels ↔ meters) → players → ball "
+    "→ parabolic smoothing → shot / bounce detection → analytics.",
+    "Three YOLO26 models feed one metric court space; every statistic is "
+    "computed in real-world meters.",
+])
 clear_text(S[10][8]); clear_text(S[10][9])
 
 # ---- slide 12: Proposed 2 (full text) ----
@@ -250,9 +250,14 @@ set_bullets(S[14][7], [
     "held-out val.",
     "Court JSON converted to Ultralytics pose format; keypoints remapped to a "
     "metric court model.",
-], size=15)
+])
 clear_text(S[14][9]); clear_text(S[14][10])
-replace_pic(prs.slides[14], S[14][6], f"{A}/ball_sample.jpg")
+# raw (non-annotated) samples, one per dataset, stacked on the left
+S[14][6]._element.getparent().remove(S[14][6]._element)
+label(prs.slides[14], "Court keypoint dataset — raw frame", 0.5, 2.55, 5.9)
+add_pic(prs.slides[14], f"{A}/court_raw_hard.png", 0.5, 2.9, 5.9, 2.45)
+label(prs.slides[14], "Ball dataset — raw frame", 0.5, 5.5, 5.9)
+add_pic(prs.slides[14], f"{A}/ball_raw_grass.jpg", 0.5, 5.85, 5.9, 2.45)
 
 # ---- slide 16: Dataset 2 / protocol (left image = ball curves) ----
 set_text(S[15][4], "Training and Evaluation Protocol")
@@ -264,7 +269,7 @@ set_bullets(S[15][7], [
     "Metrics: mAP@50, mAP@50–95, precision / recall, and ms per image.",
     "Baseline: the COCO zero-shot ‘sports ball’ class vs our fine-tuned "
     "detectors.",
-], size=15)
+])
 clear_text(S[15][9]); clear_text(S[15][10])
 replace_pic(prs.slides[15], S[15][6], f"{FIG}/03-BallTrainingCurves.png")
 
@@ -303,7 +308,7 @@ set_text(S[18][7], "Main limitation: the system is tuned to hardcourt with "
 clear_text(S[18][6]); clear_text(S[18][8]); clear_text(S[18][10])
 frames = [
     (f"{SEL}/sinner_hardcourt_sec007.png", "Hardcourt — works"),
-    (f"{SEL}/murray_clay_sec019.png", "Clay — overlay drifts"),
+    (f"{SEL}/murray_clay_sec002.png", "Clay — overlay drifts"),
     (f"{SEL}/iga_grass_sec008.png", "Grass — P1 lost"),
 ]
 for (path, cap), x in zip(frames, [0.7, 5.65, 10.6]):
@@ -330,8 +335,8 @@ set_bullets(S[20][6], [
     "2211 held-out frames.",
     "Main limitation: generalization beyond hardcourt and good lighting "
     "(clay / grass).",
-    "Future work: multi-surface dataset, ball height for 3D speeds, learned "
-    "event rules, and in/out calls from bounces.",
+    "Future work: ball height for 3D speeds, learned event rules, and in/out "
+    "calls from bounces.",
 ])
 clear_text(S[20][8]); clear_text(S[20][9]); clear_text(S[20][10])
 
