@@ -196,10 +196,6 @@
 
 	This project addressed the extraction of quantitative match statistics from single-camera broadcast tennis videos. A complete pipeline was built around three YOLO26 models: a custom-trained court keypoint pose model, a pretrained player tracker, and a ball detector fine-tuned on a dedicated dataset, with all analytics computed in metric court coordinates via homography. Experimentally, the fine-tuned YOLO26s ball detector reached 0.905 mAP@50 and 0.880 recall on a held-out test set, outperforming the nano variant at a modest inference cost, and the court model was validated on 2211 unseen frames. The student's contributions span dataset preparation, model training, a physics-motivated trajectory smoother, metric shot and bounce detection, and the integration of the full system. The main limitations are the poor generalization beyond hardcourt and good lighting -- a dataset-bias effect that degrades court, player and bounce detection on clay and grass -- the planar speed estimates inherent to the single-camera setup, and the sensitivity to long ball-detection gaps; future work includes training the court-keypoint model on a more surface-diverse dataset, recovering the ball height for true 3D speeds, replacing the heuristic event rules with a learned classifier, and exploiting the metric bounce locations for automatic in/out line-calling.
 
-	\section*{Acknowledgments}
-
-	The project uses the Ultralytics YOLO framework and PyTorch. The court keypoint model was trained on Google Colab (NVIDIA T4 GPU).
-
 	\bibliographystyle{ieeetr}
 	\bibliography{references}
 
