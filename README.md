@@ -1,5 +1,7 @@
 # CourtVision - Tennis Match Analysis with YOLO26
 
+[![Download Paper](https://img.shields.io/badge/Download-Paper_PDF-blue?logo=github)](https://github.com/JustCh3cco-19/TennisVision/releases/latest/download/TennisVisionPaper.pdf)
+
 Analyzes broadcast tennis videos: detects the two players and the ball,
 reconstructs the court geometry, and computes shot speed, shot count,
 shot type and player movement speed, rendered on an annotated video
@@ -45,13 +47,13 @@ datasets/                datasets (gitignored)
 input/                   input videos (gitignored)
 output/                  annotated videos and previews (gitignored)
 runs/                    Ultralytics training/validation runs (gitignored)
-exam/                    report and presentation material
-    A - Relation/        LaTeX report
+docs/                    report and presentation material
+    paper/               LaTeX report
         Makefile         `make` builds diagram + report, `make clean` removes intermediates
         src/             LaTeX sources: report .tex, references.bib
             figures/     report figures (TikZ pipeline diagram + training-curve PNGs)
-        pdf/             compiled report PDF
-    B - Presentation/    presentation slides
+        TennisVisionPaper.pdf  compiled report PDF (gitignored, generated automatically)
+    presentation/        presentation slides
 ```
 
 ## Install

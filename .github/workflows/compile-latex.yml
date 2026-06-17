@@ -41,13 +41,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: "paper-v${{ github.run_number }}"
-          name: "Paper Build v${{ github.run_number }}"
+          name: "TennisVision Paper"
           body: |
             Automated build of the LaTeX report.
             
             **Commit:** ${{ github.sha }}
             **Message:** ${{ github.event.head_commit.message }}
-          files: docs/paper/TennisVision-(Paper).pdf
+          files: docs/paper/TennisVisionPaper.pdf
           prerelease: false
           make_latest: true
         env:

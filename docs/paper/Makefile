@@ -1,6 +1,6 @@
 REPORT = AI_LAB_Report_Template_ACSAI_2025_2026
 DIAGRAM = src/figures/02-PipelineDiagram
-OUTPUT = TennisVision-(Paper).pdf
+OUTPUT = TennisVisionPaper.pdf
 
 .PHONY: all report diagram clean
 
