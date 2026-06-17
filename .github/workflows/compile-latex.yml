@@ -1,0 +1,43 @@
+name: Compile LaTeX Report
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'docs/paper/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'docs/paper/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install LaTeX and Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            texlive-latex-base \
+            texlive-latex-recommended \
+            texlive-latex-extra \
+            texlive-fonts-recommended \
+            texlive-fonts-extra \
+            texlive-science \
+            texlive-bibtex-extra \
+            poppler-utils
+
+      - name: Build Diagram and Report
+        run: |
+          cd "docs/paper"
+          make all
+
+      - name: Upload PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TennisVision-(Paper)
+          path: docs/paper/TennisVision-(Paper).pdf

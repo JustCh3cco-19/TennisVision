@@ -27,5 +27,7 @@ sinner.mp4
 *.synctex.gz
 *.fls
 *.fdb_latexmk
+docs/paper/pdf/
+docs/paper/*.pdf
 
 cache/
