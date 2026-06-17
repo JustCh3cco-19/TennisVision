@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install LaTeX and Dependencies
         run: |
@@ -35,11 +37,11 @@ jobs:
           cd "docs/paper"
           make all
 
-      - name: Update Latest Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: "Latest Paper Build"
+          tag_name: "paper-v${{ github.run_number }}"
+          name: "Paper Build v${{ github.run_number }}"
           body: |
             Automated build of the LaTeX report.
             
