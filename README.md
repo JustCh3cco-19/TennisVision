@@ -1,4 +1,4 @@
-# CourtVision - Tennis Match Analysis with YOLO26
+# TennisVision - Tennis Match Analysis with YOLO26
 
 [![Download Paper](https://img.shields.io/badge/Download-Paper_PDF-blue?logo=github)](https://github.com/JustCh3cco-19/TennisVision/releases/latest/download/TennisVisionPaper.pdf)
 
