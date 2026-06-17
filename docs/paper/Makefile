@@ -13,7 +13,7 @@ $(OUTPUT): src/$(REPORT).tex src/references.bib src/figures/*.png
 	cd src && bibtex $(REPORT)
 	cd src && pdflatex -interaction=nonstopmode $(REPORT)
 	cd src && pdflatex -interaction=nonstopmode $(REPORT)
-	mv src/$(REPORT).pdf $(OUTPUT)
+	mv src/$(REPORT).pdf "$(OUTPUT)"
 
 # the diagram is a standalone TikZ figure, included in the report as PNG
 diagram: $(DIAGRAM).png
@@ -26,4 +26,4 @@ $(DIAGRAM).png: $(DIAGRAM).tex
 clean:
 	rm -f src/*.aux src/*.log src/*.bbl src/*.blg src/*.out src/*.toc \
 		src/figures/*.aux src/figures/*.log src/figures/*.pdf
-	rm -f $(OUTPUT)
+	rm -f "$(OUTPUT)"
