@@ -1,18 +1,17 @@
-name: Compile LaTeX Report
+name: Compile LaTeX Report and Release
 
 on:
   push:
     branches: [ main, master ]
     paths:
       - 'docs/paper/**'
-  pull_request:
-    branches: [ main, master ]
-    paths:
-      - 'docs/paper/**'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,8 +35,18 @@ jobs:
           cd "docs/paper"
           make all
 
-      - name: Upload PDF Artifact
-        uses: actions/upload-artifact@v4
+      - name: Update Latest Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: TennisVision-(Paper)
-          path: docs/paper/TennisVision-(Paper).pdf
+          tag_name: latest
+          name: "Latest Paper Build"
+          body: |
+            Automated build of the LaTeX report.
+            
+            **Commit:** ${{ github.sha }}
+            **Message:** ${{ github.event.head_commit.message }}
+          files: docs/paper/TennisVision-(Paper).pdf
+          prerelease: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
