@@ -73,7 +73,7 @@
 
 \begin{figure*}[t]
 	\centering
-	\includegraphics[width=0.95\textwidth]{02-PipelineDiagram.png}
+	\includegraphics[width=0.95\textwidth]{01-PipelineDiagram.png}
 	\caption{TennisVision pipeline. The input video is processed by three YOLO26 models: a pose model for the 14 court keypoints (from which the image-to-court homography is estimated), the pretrained detector with BoT-SORT association for the two players, and a fine-tuned detector for the ball. Ball detections are refined by a piecewise parabolic smoother, all positions are projected to metric court coordinates, shots are detected as motion reversals along the court length, and statistics are rendered on the annotated output video with a top-down minimap.}
 	\label{fig:architecture}
 \end{figure*}
@@ -143,7 +143,7 @@
 
 \begin{figure*}[t]
 	\centering
-	\includegraphics[width=0.92\textwidth]{04-CourtTrainingCurves.png}
+	\includegraphics[width=0.92\textwidth]{03-CourtTrainingCurves.png}
 	\caption{Training of the court keypoint model (YOLO26-pose, 66 epochs on a Colab T4 GPU). Left: validation mAP per epoch (pose mAP@50 solid, pose mAP@50--95 dashed, box mAP@50--95 dotted). Right: pose loss on the training (solid) and validation (dashed) splits.}
 	\label{fig:court_curves}
 \end{figure*}
@@ -152,7 +152,7 @@
 
 \begin{figure*}[t]
 	\centering
-	\includegraphics[width=0.92\textwidth]{03-BallTrainingCurves.png}
+	\includegraphics[width=0.92\textwidth]{02-BallTrainingCurves.png}
 	\caption{Fine-tuning of the two ball detectors on the validation split. Left: mAP@50 (solid) and mAP@50--95 (dashed) per epoch. Right: recall per epoch. YOLO26s (red) consistently edges out YOLO26n (blue) at equal training settings.}
 	\label{fig:ball_curves}
 \end{figure*}

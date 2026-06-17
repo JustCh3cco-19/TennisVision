@@ -1,5 +1,5 @@
-REPORT = AI_LAB_Report_Template_ACSAI_2025_2026
-DIAGRAM = src/figures/02-PipelineDiagram
+REPORT = TennisVisionPaper
+DIAGRAM = src/figures/01-PipelineDiagram
 OUTPUT = TennisVisionPaper.pdf
 
 .PHONY: all report diagram clean
@@ -19,7 +19,7 @@ $(OUTPUT): src/$(REPORT).tex src/references.bib src/figures/*.png
 diagram: $(DIAGRAM).png
 
 $(DIAGRAM).png: $(DIAGRAM).tex
-	cd src/figures && pdflatex -interaction=nonstopmode 02-PipelineDiagram
+	cd src/figures && pdflatex -interaction=nonstopmode 01-PipelineDiagram
 	pdftoppm -png -r 300 -singlefile $(DIAGRAM).pdf $(DIAGRAM)
 	rm -f $(DIAGRAM).pdf
 
